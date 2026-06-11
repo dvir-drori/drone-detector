@@ -281,7 +281,7 @@ def main():
     )
     parser.add_argument(
         '--score-thresh', type=float, default=None,
-        help='Detection score threshold (default: 0.40)',
+        help='Detection score threshold (default: 0.10)',
     )
     parser.add_argument(
         '--no-specificity', action='store_true',

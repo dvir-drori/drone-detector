@@ -84,8 +84,9 @@ For each STFT frame:
   check harmonics k*f0 (k=1..10) against their **local noise floor** --
   the median power in a ±15-bin neighbourhood, excluding the ±2 peak
   bins.  A harmonic counts as "found" if its peak exceeds the local floor
-  by ≥13 dB (20×).  Harmonicity = fraction of harmonics found (minimum 2
-  required).  This naturally handles spectral colour (pink noise, mic
+  by ≥9 dB (8×).  Harmonicity = fraction of harmonics found (minimum 5
+  required — real drones show 5-8, rejecting sources with only 2-4
+  spurious peaks).  This naturally handles spectral colour (pink noise, mic
   roll-off) without global whitening, and is robust to missing harmonic
   lines (2/3-blade propellers).
 - **Spectral flatness**: geometric/arithmetic mean ratio of the in-band

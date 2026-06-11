@@ -78,10 +78,11 @@ def harmonic_summation(mag_col: np.ndarray, freqs: np.ndarray,
     **local noise floor**.  The local floor for each harmonic k*f0 is the
     median power in a ±half_win neighbourhood excluding the ±2 peak bins.
     A harmonic counts as "found" if its peak power exceeds the local
-    floor by *snr_thresh* (default 3x / ~5 dB).
+    floor by *snr_thresh* (8× / ~9 dB).
 
-    Harmonicity = fraction of harmonics found, mapped through a
-    square-root for smoother gradation.
+    Requires at least 5 harmonics found (rejects sources with only
+    2-4 weak harmonics while drones typically show 5-8).
+    Harmonicity = fraction of harmonics found.
 
     Operates on the **original** (not whitened) magnitude spectrum.
     The per-harmonic local floor naturally compensates for spectral
@@ -105,7 +106,9 @@ def harmonic_summation(mag_col: np.ndarray, freqs: np.ndarray,
     # Local floor estimation: ±half_win bins excluding ±peak_ex
     half_win = 15                  # ~117 Hz at df=7.8
     peak_ex = 2                    # exclude ±2 bins around harmonic center
-    snr_thresh = 20.0              # ~13 dB above local floor to count
+    snr_thresh = 8.0               # ~9 dB above local floor to count
+                                   # Real drone harmonics are 5-10 dB above
+                                   # local floor (Batear uses 4 dB / 2.5×)
 
     best_f0 = 0.0
     best_harm = 0.0
@@ -141,10 +144,10 @@ def harmonic_summation(mag_col: np.ndarray, freqs: np.ndarray,
             if floor > 0 and peak / floor >= snr_thresh:
                 n_found += 1
 
-        if n_checked < 2 or n_found < 2:
+        if n_checked < 4 or n_found < 5:
             continue
 
-        # Linear fraction of harmonics found (min 2 required)
+        # Linear fraction of harmonics found (min 5 required)
         h = float(n_found / n_checked)
         h = min(1.0, h)
 
@@ -550,8 +553,13 @@ class DroneDetector:
         jitter = f0_jitter(recent_f0)
 
         # -- drone likeness (combined specificity score) --
+        # AM is the strongest discriminator: multirotors have beating
+        # between rotors (AM=0.3-1.0), speech/machinery are steady (AM<0.1).
+        # Jitter is capped: speech prosody gives high jitter (CV>0.10)
+        # which is NOT drone-like RPM wander (CV 0.005-0.05).
         jitter_norm = min(jitter / 0.02, 1.0) if jitter > 0 else 0.0
-        drone_like = 0.7 * am_idx + 0.3 * jitter_norm
+        jitter_capped = min(jitter_norm, 0.5)     # cap at 50% credit
+        drone_like = 0.85 * am_idx + 0.15 * jitter_capped
 
         # -- apply specificity gate --
         detected = harmonic_detected
