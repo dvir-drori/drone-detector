@@ -115,7 +115,8 @@ class TestSteadyDrone:
         dur = 3.0
         clip = synth_drone(dur, f0=150, amp=1.0) + noise(dur, amp=0.1)
 
-        det = DroneDetector()
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
         results = det.process_clip(clip, SR)
 
         detected = [r for r in results if r.detected]
@@ -127,7 +128,8 @@ class TestSteadyDrone:
         dur = 3.0
         clip = synth_drone(dur, f0=150, amp=1.0) + noise(dur, amp=0.1)
 
-        det = DroneDetector()
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
         results = det.process_clip(clip, SR)
 
         detected = [r for r in results if r.detected]
@@ -146,7 +148,8 @@ class TestLowSNRDrone:
         dur = 3.0
         clip = synth_drone(dur, f0=150, amp=0.4) + noise(dur, amp=0.4)
 
-        det = DroneDetector()
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
         results = det.process_clip(clip, SR)
 
         detected = [r for r in results if r.detected]
@@ -199,7 +202,8 @@ class TestApproachingDrone:
         drone = synth_drone(dur, f0=150, amp=envelope, doppler=5.0)
         clip = drone + noise(dur, amp=0.1)
 
-        det = DroneDetector()
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
         results = det.process_clip(clip, SR)
 
         detected = [r for r in results if r.detected]

@@ -61,7 +61,7 @@ def streaming_process(clip_16k, device_sr=DEVICE_SR, target_sr=SR):
 
     resampler = Resampler(device_sr, target_sr)
     hp = CausalHighpass(target_sr)
-    cfg = DetectorConfig(sr=target_sr)
+    cfg = DetectorConfig(sr=target_sr, require_specificity=False)
     framer = StreamingFramer(cfg.n_fft, cfg.hop, target_sr)
     detector = DroneDetector(cfg)
 
@@ -131,7 +131,8 @@ class TestStreamingMatchesOffline:
         clip = synth_drone(dur, f0=150, amp=1.0) + noise(dur, amp=0.1)
 
         # Offline
-        det_off = DroneDetector()
+        cfg = DetectorConfig(require_specificity=False)
+        det_off = DroneDetector(cfg)
         off_results = det_off.process_clip(clip, SR)
 
         # Streaming

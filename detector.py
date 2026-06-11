@@ -321,7 +321,7 @@ class DetectorConfig:
     am_min: float = 0.3                   # minimum AM index for drone-like
     jitter_min: float = 0.005             # minimum f0 CV for drone-like
     specificity_thresh: float = 0.3       # drone_likeness gate
-    require_specificity: bool = False     # False = Stage-1 compat
+    require_specificity: bool = True      # gate on drone dynamics
     known_static_sources: List = field(default_factory=list)
 
 
