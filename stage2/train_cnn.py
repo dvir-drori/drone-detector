@@ -30,6 +30,23 @@ Training data
   should be concatenated with or appended as auxiliary inputs alongside
   the CNN embedding for best results.
 
+Dataset URLs
+~~~~~~~~~~~~
+- DroneAudioDataset: https://github.com/saraalemadi/DroneAudioDataset
+- ESC-50: https://github.com/karolpiczak/ESC-50
+- UrbanSound8K: https://urbansounddataset.weebly.com/urbansound8k.html
+- Drone-detection-dataset: https://github.com/DroneDetectionThesis/Drone-detection-dataset
+- drone-audio-detection-samples: https://huggingface.co/datasets/geronimobasso/drone-audio-detection-samples
+- DroneAudioSet (NUS): low-SNR evaluation resource
+
+Held-out validation rules
+~~~~~~~~~~~~~~~~~~~~~~~~~
+- **Split by drone model**: no drone model appears in both train and test.
+- **Split by environment**: no recording location appears in both train
+  and test.
+- **No session leakage**: clips from the same recording session must not
+  span train/test splits.
+
 Notes
 -----
 - A cyclostationary beamforming front-end (cMPDR) is the right low-SNR upgrade

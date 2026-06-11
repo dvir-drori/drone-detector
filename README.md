@@ -63,7 +63,7 @@ All tests use synthetic signals -- no external audio files needed.
 2. Also capture your site's ambient noise (wind, traffic, machinery).
 3. Watch the live `score` value.
 4. Adjust thresholds in `DetectorConfig`:
-   - **`score_thresh`** (default 0.08): raise to reduce false alarms,
+   - **`score_thresh`** (default 0.40): raise to reduce false alarms,
      lower for more sensitivity.
    - **`persist_frames`** (default 12) / **`persist_ratio`** (default 0.6):
      how many consecutive frames must score above threshold before a
@@ -74,13 +74,18 @@ All tests use synthetic signals -- no external audio files needed.
 ## How it works
 
 A multirotor produces a **comb of harmonics** on top of its blade-pass
-frequency (BPF), fundamental typically 100--300 Hz, harmonics extending
+frequency (BPF), fundamental typically 100--380 Hz, harmonics extending
 to several kHz.  Broadband noise (wind, traffic) has no such comb.
 
 For each STFT frame:
 
-- **Harmonic summation**: sweep candidate f0 values, sum spectral energy
-  at k*f0 for k=1..8.  The best f0 and its harmonicity ratio are returned.
+- **Harmonic scoring (trimmed-mean prominence)**: for each candidate f0,
+  measure power at each harmonic bin k*f0 for k=1..10 (+/-1 bin
+  tolerance).  Each harmonic's prominence ratio = peak power / median
+  in-band power.  The ratios are sorted and a trimmed mean (drop
+  top/bottom 20%) is computed, making the score robust to missing
+  harmonic lines (common with 2-blade and 3-blade propellers).  The
+  trimmed mean ratio is mapped to [0, 1]: `h = 1 - 1/ratio`.
 - **Spectral flatness**: geometric/arithmetic mean ratio of the in-band
   spectrum.  Tonality = 1 - flatness.
 - **Score = harmonicity x tonality**: high for a harmonic source, ~0 for

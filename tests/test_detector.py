@@ -11,6 +11,7 @@ from drone_detector.detector import (
     DroneDetector, DetectorConfig,
     highpass, frame_spectrogram,
     harmonic_summation, spectral_flatness, band_energy,
+    tonal_prominence, payload_indicator,
     am_index, f0_jitter,
 )
 
@@ -339,4 +340,120 @@ class TestGeneratorRejected:
         rate = len(detected) / len(results)
         assert rate > 0.70, (
             f"Generator detection rate {rate:.2f} without specificity should be > 0.70"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Tonal prominence
+# ---------------------------------------------------------------------------
+
+class TestTonalProminence:
+    """Verify tonal_prominence is high for drones and low for noise."""
+
+    def test_drone_high_prominence(self):
+        np.random.seed(42)
+        dur = 3.0
+        clip = synth_drone(dur, f0=150, amp=1.0) + noise(dur, amp=0.1)
+
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
+        results = det.process_clip(clip, SR)
+
+        detected = [r for r in results if r.detected]
+        assert len(detected) > 0, "No detections at all"
+        median_tp = np.median([r.tonal_prominence for r in detected])
+        assert median_tp > 2.0, (
+            f"Median tonal_prominence {median_tp:.2f} for drone should be > 2.0"
+        )
+
+    def test_noise_lower_prominence_than_drone(self):
+        """Tonal prominence at a fixed drone f0 should be much lower for
+        noise than for a drone signal at the same frequency."""
+        from drone_detector.detector import (
+            tonal_prominence as tp_func, frame_spectrogram, highpass,
+        )
+        np.random.seed(99)
+        dur = 3.0
+
+        # Noise clip
+        clip_n = noise(dur, amp=1.0)
+        clip_n = highpass(clip_n, SR)
+        freqs, _, mag_n = frame_spectrogram(clip_n, SR)
+        tp_noise = np.median([
+            tp_func(mag_n[:, i], freqs, 150.0) for i in range(mag_n.shape[1])
+        ])
+
+        # Drone clip
+        np.random.seed(42)
+        clip_d = synth_drone(dur, f0=150, amp=1.0) + noise(dur, amp=0.1)
+        clip_d = highpass(clip_d, SR)
+        _, _, mag_d = frame_spectrogram(clip_d, SR)
+        tp_drone = np.median([
+            tp_func(mag_d[:, i], freqs, 150.0) for i in range(mag_d.shape[1])
+        ])
+
+        assert tp_drone > tp_noise * 2, (
+            f"Drone prominence {tp_drone:.1f} should be >> noise {tp_noise:.1f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# High-BPF drone (testing f0_max=380 expansion)
+# ---------------------------------------------------------------------------
+
+class TestHighBPFDrone:
+    """Drone at f0=350 Hz should be detected with expanded f0_max=380."""
+
+    def test_detection_rate(self):
+        np.random.seed(42)
+        dur = 3.0
+        clip = synth_drone(dur, f0=350, amp=1.0, n_harm=6) \
+             + noise(dur, amp=0.1)
+
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
+        results = det.process_clip(clip, SR)
+
+        detected = [r for r in results if r.detected]
+        rate = len(detected) / len(results)
+        assert rate > 0.50, (
+            f"High-BPF drone detection rate {rate:.2f} should be > 0.50"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Missing harmonics (2-blade / 3-blade propeller)
+# ---------------------------------------------------------------------------
+
+class TestMissingHarmonics:
+    """Drone with harmonics 4 and 7 suppressed should still be detected."""
+
+    def test_detection_rate(self):
+        np.random.seed(42)
+        dur = 3.0
+        f0 = 150
+        t = np.arange(int(SR * dur)) / SR
+        f0_t = f0 + 2.0 * np.sin(2 * np.pi * 0.5 * t)
+
+        signal = np.zeros_like(t)
+        for k in range(1, 11):
+            if k in (4, 7):
+                continue  # suppress harmonics 4 and 7
+            phase = 2 * np.pi * k * np.cumsum(f0_t) / SR
+            signal += np.sin(phase) / k
+
+        peak = np.max(np.abs(signal))
+        if peak > 0:
+            signal /= peak
+
+        clip = signal + noise(dur, amp=0.1)
+
+        cfg = DetectorConfig(require_specificity=False)
+        det = DroneDetector(cfg)
+        results = det.process_clip(clip, SR)
+
+        detected = [r for r in results if r.detected]
+        rate = len(detected) / len(results)
+        assert rate > 0.50, (
+            f"Missing-harmonics detection rate {rate:.2f} should be > 0.50"
         )
