@@ -310,8 +310,8 @@ class DetectorConfig:
     f0_max: float = 320
     f0_step: float = 2
     n_harm: int = 8
-    score_thresh: float = 0.08
-    persist_frames: int = 12
+    score_thresh: float = 0.04
+    persist_frames: int = 25
     persist_ratio: float = 0.6
     history_seconds: float = 4.0
 
