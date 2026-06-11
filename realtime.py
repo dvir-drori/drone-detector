@@ -135,7 +135,8 @@ def list_devices():
 # Live runner
 # ---------------------------------------------------------------------------
 
-def run_live(device=None, record_path=None, target_sr=16000):
+def run_live(device=None, record_path=None, target_sr=16000,
+             score_thresh=None, no_specificity=False):
     """Run live drone detection from the microphone."""
     try:
         import sounddevice as sd
@@ -154,8 +155,15 @@ def run_live(device=None, record_path=None, target_sr=16000):
     print(f"Internal sample rate: {target_sr} Hz")
 
     # Processing chain
-    cfg = DetectorConfig(sr=target_sr)
+    cfg_kwargs = dict(sr=target_sr)
+    if score_thresh is not None:
+        cfg_kwargs['score_thresh'] = score_thresh
+    if no_specificity:
+        cfg_kwargs['require_specificity'] = False
+    cfg = DetectorConfig(**cfg_kwargs)
     detector = DroneDetector(cfg)
+    print(f"score_thresh={cfg.score_thresh:.2f}  "
+          f"require_specificity={cfg.require_specificity}")
     resampler = Resampler(device_sr, target_sr)
     hp_filter = CausalHighpass(target_sr)
     framer = StreamingFramer(cfg.n_fft, cfg.hop, target_sr)
@@ -271,6 +279,14 @@ def main():
         '--sr', type=int, default=16000,
         help='Internal sample rate (default: 16000)',
     )
+    parser.add_argument(
+        '--score-thresh', type=float, default=None,
+        help='Detection score threshold (default: 0.40)',
+    )
+    parser.add_argument(
+        '--no-specificity', action='store_true',
+        help='Disable drone-specificity gate (AM + jitter)',
+    )
 
     args = parser.parse_args()
 
@@ -278,7 +294,9 @@ def main():
         list_devices()
         return
 
-    run_live(device=args.device, record_path=args.record, target_sr=args.sr)
+    run_live(device=args.device, record_path=args.record, target_sr=args.sr,
+             score_thresh=args.score_thresh,
+             no_specificity=args.no_specificity)
 
 
 if __name__ == '__main__':

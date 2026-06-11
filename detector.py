@@ -73,20 +73,19 @@ def harmonic_summation(mag_col: np.ndarray, freqs: np.ndarray,
                        band: Tuple[float, float] = (100, 8000)):
     """Find the best fundamental frequency and its harmonicity score.
 
-    Uses **robust per-harmonic energy measurement** with a trimmed mean.
-    For each candidate f0, the power at each harmonic k*f0 (k=1..n_harm)
-    is compared to the local spectral median.  The resulting prominence
-    ratios are sorted and the middle 60% are averaged (top/bottom 20%
-    trimmed), making the score robust to missing harmonic lines -- common
-    with 2-blade and 3-blade propellers where certain harmonics cancel or
-    are mechanically suppressed.
+    Inspired by the Batear project's FFT harmonic detection: for each
+    candidate f0, check the first *n_harm* harmonics against their
+    **local noise floor**.  The local floor for each harmonic k*f0 is the
+    median power in a ±half_win neighbourhood excluding the ±2 peak bins.
+    A harmonic counts as "found" if its peak power exceeds the local
+    floor by *snr_thresh* (default 3x / ~5 dB).
 
-    The spectrum should be *whitened* before calling this function
-    (see ``whiten_spectrum``) so that spectral slope from wind noise, mic
-    response, etc. does not bias the prominence ratios.
+    Harmonicity = fraction of harmonics found, mapped through a
+    square-root for smoother gradation.
 
-    Written so the hot path is straightforward to later replace with a
-    Numba ``@njit`` version.
+    Operates on the **original** (not whitened) magnitude spectrum.
+    The per-harmonic local floor naturally compensates for spectral
+    colour (pink noise, mic roll-off) without global whitening.
 
     Returns
     -------
@@ -95,48 +94,58 @@ def harmonic_summation(mag_col: np.ndarray, freqs: np.ndarray,
     df = freqs[1] - freqs[0] if len(freqs) > 1 else 1.0
     n_bins = len(mag_col)
 
-    # In-band indices
     band_lo = int(np.ceil(band[0] / df))
     band_hi = min(int(np.floor(band[1] / df)) + 1, n_bins)
 
-    spec_band = mag_col[band_lo:band_hi] ** 2      # in-band power
-    n_band = len(spec_band)
+    power = mag_col ** 2           # full-spectrum power (indexed by bin)
 
-    if n_band < 2 or np.sum(spec_band) < 1e-30:
+    if band_hi - band_lo < 2:
         return 0.0, 0.0
 
-    median_power = float(np.median(spec_band)) + 1e-30
+    # Local floor estimation: ±half_win bins excluding ±peak_ex
+    half_win = 15                  # ~117 Hz at df=7.8
+    peak_ex = 2                    # exclude ±2 bins around harmonic center
+    snr_thresh = 20.0              # ~13 dB above local floor to count
 
     best_f0 = 0.0
     best_harm = 0.0
 
-    # Trimming: drop top/bottom 20% of per-harmonic ratios
-    trim_lo = int(np.floor(0.2 * n_harm))
-    trim_hi = n_harm - trim_lo
-    if trim_hi <= trim_lo:
-        trim_lo, trim_hi = 0, n_harm
-
     for f0 in f0_grid:
-        ratios = np.empty(n_harm, dtype=np.float64)
+        n_found = 0
+        n_checked = 0
 
         for k in range(1, n_harm + 1):
-            bin_center = int(round(k * f0 / df))
-            # +/-1 bin tolerance for slight f0 inaccuracy
-            lo = max(bin_center - 1, 0)
-            hi = min(bin_center + 2, n_bins)   # exclusive
-            if lo >= n_bins or hi <= 0 or lo >= hi:
-                ratios[k - 1] = 1.0            # no data -> neutral
+            bc = int(round(k * f0 / df))
+            if bc < band_lo or bc >= band_hi:
                 continue
-            peak_power = float(np.max(mag_col[lo:hi] ** 2))
-            ratios[k - 1] = peak_power / median_power
+            n_checked += 1
 
-        # Trimmed mean of prominence ratios
-        ratios.sort()
-        trimmed = ratios[trim_lo:trim_hi]
-        ratio_mean = float(np.mean(trimmed)) if len(trimmed) > 0 else 1.0
+            # Peak: max in ±1 bins
+            pk_lo = max(bc - 1, 0)
+            pk_hi = min(bc + 2, n_bins)
+            peak = float(np.max(power[pk_lo:pk_hi]))
 
-        # Map to [0, 1]: h = 1 - 1/ratio for ratio > 1, else 0
-        h = max(0.0, 1.0 - 1.0 / ratio_mean) if ratio_mean > 1.0 else 0.0
+            # Local floor: median of ±half_win excluding ±peak_ex
+            fl_lo = max(bc - half_win, 0)
+            fl_hi = min(bc + half_win + 1, n_bins)
+            mask = np.ones(fl_hi - fl_lo, dtype=bool)
+            ex_lo = max(bc - peak_ex, fl_lo) - fl_lo
+            ex_hi = min(bc + peak_ex + 1, fl_hi) - fl_lo
+            mask[ex_lo:ex_hi] = False
+            floor_bins = power[fl_lo:fl_hi][mask]
+
+            if len(floor_bins) < 3:
+                continue
+            floor = float(np.median(floor_bins))
+
+            if floor > 0 and peak / floor >= snr_thresh:
+                n_found += 1
+
+        if n_checked < 2 or n_found < 2:
+            continue
+
+        # Linear fraction of harmonics found (min 2 required)
+        h = float(n_found / n_checked)
         h = min(1.0, h)
 
         if h > best_harm:
@@ -398,8 +407,7 @@ class DetectorConfig:
     f0_step: float = 2
     n_harm: int = 10           # measured harmonic combs extend to k=10+
                                # (saraalemadi DroneAudioDataset spectrograms)
-    score_thresh: float = 0.40       # raised for trimmed-mean harmonic scoring
-                                      # (drone ~0.55+, noise ~0.28)
+    score_thresh: float = 0.10
     persist_frames: int = 25
     persist_ratio: float = 0.6
     history_seconds: float = 4.0
@@ -499,18 +507,15 @@ class DroneDetector:
         """
         cfg = self.cfg
 
-        # -- spectral whitening removes smooth slope (colored noise, mic
-        #    response) so the autocorrelation-based harmonicity sees only
-        #    peak structure, not broadband tilt --
-        mag_white = whiten_spectrum(mag_col)
-
         # -- per-frame features --
-        # Harmonicity: spectral autocorrelation on whitened spectrum
+        # Harmonicity: harmonic sieve on original spectrum (energy
+        #              fraction captured by harmonic bins is naturally
+        #              scale- and color-invariant)
         # Tonality:    spectral flatness on original spectrum (preserves
         #              the distinction between peaked and flat spectra)
         # Energy:      original spectrum (physical amplitude for trend)
         f0, harmonicity = harmonic_summation(
-            mag_white, freqs, self.f0_grid, cfg.n_harm, cfg.band,
+            mag_col, freqs, self.f0_grid, cfg.n_harm, cfg.band,
         )
         tonality = spectral_flatness(mag_col, freqs, cfg.band)
         energy = band_energy(mag_col, freqs, cfg.band)

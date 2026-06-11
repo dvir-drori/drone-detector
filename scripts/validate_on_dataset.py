@@ -25,6 +25,9 @@ import subprocess
 from pathlib import Path
 from collections import defaultdict
 
+# Ensure the project root is on sys.path
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
 import numpy as np
 
 
@@ -92,7 +95,7 @@ def find_class_folders(dataset_dir: str):
 def validate(dataset_dir: str, clip_thresh: float = 0.30,
              require_specificity: bool = False):
     """Run Stage-1 detector on each clip and report per-class rates."""
-    from drone_detector.detector import DroneDetector, DetectorConfig
+    from detector import DroneDetector, DetectorConfig
 
     classes = find_class_folders(dataset_dir)
     if not classes:

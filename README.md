@@ -63,9 +63,9 @@ All tests use synthetic signals -- no external audio files needed.
 2. Also capture your site's ambient noise (wind, traffic, machinery).
 3. Watch the live `score` value.
 4. Adjust thresholds in `DetectorConfig`:
-   - **`score_thresh`** (default 0.40): raise to reduce false alarms,
+   - **`score_thresh`** (default 0.10): raise to reduce false alarms,
      lower for more sensitivity.
-   - **`persist_frames`** (default 12) / **`persist_ratio`** (default 0.6):
+   - **`persist_frames`** (default 25) / **`persist_ratio`** (default 0.6):
      how many consecutive frames must score above threshold before a
      detection is declared.  Increase to reject more transient sounds;
      decrease for faster response.
@@ -79,16 +79,18 @@ to several kHz.  Broadband noise (wind, traffic) has no such comb.
 
 For each STFT frame:
 
-- **Harmonic scoring (trimmed-mean prominence)**: for each candidate f0,
-  measure power at each harmonic bin k*f0 for k=1..10 (+/-1 bin
-  tolerance).  Each harmonic's prominence ratio = peak power / median
-  in-band power.  The ratios are sorted and a trimmed mean (drop
-  top/bottom 20%) is computed, making the score robust to missing
-  harmonic lines (common with 2-blade and 3-blade propellers).  The
-  trimmed mean ratio is mapped to [0, 1]: `h = 1 - 1/ratio`.
+- **Harmonic detection (per-harmonic local SNR)**: inspired by the Batear
+  ESP32 project.  Sweep candidate f0 values (80--380 Hz).  For each f0,
+  check harmonics k*f0 (k=1..10) against their **local noise floor** --
+  the median power in a ±15-bin neighbourhood, excluding the ±2 peak
+  bins.  A harmonic counts as "found" if its peak exceeds the local floor
+  by ≥13 dB (20×).  Harmonicity = fraction of harmonics found (minimum 2
+  required).  This naturally handles spectral colour (pink noise, mic
+  roll-off) without global whitening, and is robust to missing harmonic
+  lines (2/3-blade propellers).
 - **Spectral flatness**: geometric/arithmetic mean ratio of the in-band
   spectrum.  Tonality = 1 - flatness.
-- **Score = harmonicity x tonality**: high for a harmonic source, ~0 for
+- **Score = harmonicity × tonality**: high for a harmonic source, ~0 for
   noise.  Amplitude-scale-invariant (ratios only).
 
 Temporal integration:
@@ -120,9 +122,9 @@ features exploit what is **physically unique to a flying multirotor**:
 - **`drone_likeness`**: weighted combination of AM index + f0 jitter.
   Exposed on every `FrameResult`.
 
-Set `require_specificity=True` in `DetectorConfig` to gate detection on
-these dynamics.  With the flag off (default), Stage-1 behaviour is
-unchanged.
+The default is `require_specificity=True`, gating detection on these
+dynamics.  Set to `False` for Stage-1-only behaviour (any sustained
+harmonic source).
 
 ### Confuser masking (fixed-site deployment)
 
